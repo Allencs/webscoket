@@ -10,14 +10,14 @@ from group_code import group_code
 socket.setdefaulttimeout(20)
 
 
-# 单点：wss://10.203.109.106:8443/websocket
-# 群发：wss://10.203.109.143/websocket
+# 单点：***
+# 群发：***
 
 
 class WebSocketClient(object):
     def __init__(self):
-        self.p2p_ws_address = "wss://10.203.109.106:8443/websocket"
-        self.group_ws_address = "wss://10.203.109.143/websocket"
+        self.p2p_ws_address = "***"
+        self.group_ws_address = "***"
         self.ws = websocket.WebSocket(sslopt={"cert_reqs": ssl.CERT_NONE},
                                       sockopt=socket.setdefaulttimeout(20))
 
@@ -28,7 +28,7 @@ class WebSocketClient(object):
             "command": "REGISTER",
             "userInfo": {
                 "accessToken": "user",
-                "channelCode": "pol4s"}
+                "channelCode": "***"}
         }
 
         registry_data['userInfo']['accessToken'] = "user{}".format(num)
@@ -56,7 +56,7 @@ class WebSocketClient(object):
             "command": "REGISTER",
             "userInfo": {
                 "accessToken": "user01",
-                "channelCode": "pol4s",
+                "channelCode": "***",
                 "groupCode": ["239FA44E0AC449C59D5B06D81DF8DA9D"]
             }
         }
@@ -86,10 +86,6 @@ class WebSocketClient(object):
 
 if __name__ == '__main__':
     ws_client = WebSocketClient()
-    """
-    # 群发：wss://10.203.109.143/websocket
-    # 点对点：wss://10.203.109.106:8443/websocket
-    """
     # ws_client.p2p_client(1)
     ws_client.group_client(1)
 
