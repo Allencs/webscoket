@@ -1,3 +1,4 @@
+import queue
 from locust import Locust, events, TaskSequence, seq_task, TaskSet, task
 import websocket
 import time
@@ -5,47 +6,64 @@ import ssl
 import json
 import traceback
 import socket
+from group_code import group_code
 
 
 ###############################################
 # 测试项目：WebSocket4.0
-# 作者：allen
+# 作者：陈晟
 # 业务功能：维持WebSocket连接数、接收推送消息
 ###############################################
 
 """
 url:
-    # 群发：***
-    # 点对点：***
+    # 群发：wss://***/websocket
+    # 点对点：wss://***/websocket
 """
 
 
 def on_locust_error(locust_instance, exception, tb):
+    """
+    钩子函数，捕获错误信息
+    :param locust_instance: locust实例
+    :param exception: 抛出信息
+    :param tb: 跟踪对象
+    :return: None
+    """
     print("%r, %s, %s" % (locust_instance, exception, "".join(traceback.format_tb(tb))))
+
+
+def on_request_failure(name, response_time, exception):
+    """
+    捕获错误请求
+    :param name: 请求名
+    :param response_time: 抛出失败信息前等待时间
+    :param exception: 失败信息
+    :return: None
+    """
+    print("Name: %s, ResponseTime: %fms, FailureMsg: %s" % (name, response_time, exception))
 
 
 def on_hatch_complete(user_count):
     print("HaHa, Locust have generate %d users" % user_count)
 
 
-# def on_request_success(request_type, name, response_time, response_length):
-#     print('Type: %s, Name: %s, Time: %fms, Response Length: %d' %
-#           (request_type, name, response_time, response_length))
-
-
 class WebSocketClient(object):
     def __init__(self):
-        self.create_connection = None
-        self.send_msg = None
         # self.host = host
         self.ws = websocket.WebSocket(sslopt={"cert_reqs": ssl.CERT_NONE},
-                                      sockopt=socket.setdefaulttimeout(120))
+                                      sockopt=socket.setdefaulttimeout(20))
 
     def connect(self, url):
+        """
+        创建websocket连接
+        :param url: websocket连接地址
+        :return: -1 or None
+        """
         start_time = time.time()
         try:
-            self.create_connection = self.ws.connect(url)
-        except websocket.WebSocketException as error:
+            self.ws.connect(url)
+        except BaseException as error:
             total_time = int((time.time() - start_time) * 1000)
             events.request_failure.fire(request_type="WebSocket",
                                         name='Connect',
@@ -60,10 +78,15 @@ class WebSocketClient(object):
                                         response_length=0)
 
     def registry(self, msg):
+        """
+        发送注册信息
+        :param msg: 注册信息-JSON
+        :return: None
+        """
         start_time2 = time.time()
         try:
-            self.send_msg = self.ws.send(msg)
-        except websocket.WebSocketException as error:
+            self.ws.send(msg)
+        except BaseException as error:
             total_time2 = int((time.time() - start_time2) * 1000)
             events.request_failure.fire(request_type="WebSocket",
                                         name='Registry',
@@ -79,14 +102,16 @@ class WebSocketClient(object):
                                                 response_length=0)
                     break
 
-        return self.send_msg
-
     def recv(self):
+        """
+        接收websocket消息
+        :return: recv_message(接收到的消息)
+        """
         start_time3 = time.time()
         try:
             recv_message = self.ws.recv()
             msg_length = len(recv_message)
-        except websocket.WebSocketException as error:
+        except BaseException as error:
             total_time3 = int((time.time() - start_time3) * 1000)
             events.request_failure.fire(request_type="WebSocket",
                                         name='RecvMsg',
@@ -105,16 +130,45 @@ class WebSocketClient(object):
             return recv_message
 
     def close_ws(self):
+        """
+        关闭websocket连接
+        :return: self.ws.close()
+        """
         return self.ws.close()
 
 
 class WebSocketLocust(Locust):
+    """
+    构建自定义WebSocketLocust类，继承Locust，将自定义的client用于此Locust子类
+    """
     def __init__(self):
         super(WebSocketLocust, self).__init__()
         self.client = WebSocketClient()
 
+    queue_data = queue.Queue(maxsize=-1)
+
+    user_id = 0
+    for groupCode in group_code:
+        while user_id < 20:
+            user_id += 1
+            msg = {
+                "command": "REGISTER",
+                "userInfo": {
+                    "accessToken": "user_%d" % user_id,
+                    "channelCode": "pol4s",
+                    "groupCode": [groupCode]
+                }
+            }
+            queue_data.put(msg, True)
+            print(msg)
+            if user_id % 5 == 0:
+                break
+
 
 class RetainConnection(TaskSequence):
+    """
+    构建任务集类，继承TaskSet类或者TaskSequence类
+    """
 
     @seq_task(1)
     class SubTaskSet(TaskSequence):
@@ -122,8 +176,9 @@ class RetainConnection(TaskSequence):
 
         @seq_task(1)
         def connect(self):
-            
-            info = self.client.connect("wss://***/websocket")
+            # 群发：wss://10.203.109.143/websocket
+            # 点对点：wss://10.203.109.106:8443/websocket
+            info = self.client.connect("wss://10.203.109.143/websocket")
             if info == -1:
                 self.status = -1
 
@@ -188,7 +243,7 @@ class RetainConnection(TaskSequence):
             #     "command": "REGISTER",
             #     "userInfo": {
             #         "accessToken": "user1",
-            #         "channelCode": "***"
+            #         "channelCode": "pol4s"
             #     }
             # }
             submit_data = json.dumps(msg)
@@ -205,7 +260,8 @@ class RecvPushedMsg(TaskSet):
 
     def on_start(self):
         self.connect()
-        self.registry()
+        if self.status != -1:
+            self.registry()
 
     def connect(self):
         info = self.client.connect("wss://***/websocket")
@@ -216,9 +272,9 @@ class RecvPushedMsg(TaskSet):
         msg = {
             "command": "REGISTER",
             "userInfo": {
-                "accessToken": "518b16713b81a444b4e01fb44d532dfc",
+                "accessToken": "user1",
                 "channelCode": "pol4s",
-                "groupCode": ["239FA44E0AC449C59D5B06D81DF8DA9D"]
+                "groupCode": group_code
             }
         }
         submit_data = json.dumps(msg)
@@ -226,16 +282,20 @@ class RecvPushedMsg(TaskSet):
 
     @task
     def recv_msg(self):
-        self.client.recv()
+        if self.status != -1:
+            self.client.recv()
 
 
 events.locust_error += on_locust_error
 events.hatch_complete += on_hatch_complete
-# events.request_success += on_request_success
+events.request_failure += on_request_failure
 
 
 class MyWebSocketLocust(WebSocketLocust):
-    task_set = RetainConnection
+    """
+    定义Locust用户实例，设置用户行为
+    """
+    task_set = RecvPushedMsg
     min_wait = 200
     max_wait = 500
 
